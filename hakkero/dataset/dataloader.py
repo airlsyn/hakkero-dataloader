@@ -76,8 +76,17 @@ class Loader(torch.utils.data.IterableDataset):
         )
         return CudaPrefetcher(loader)
 
-    def get_stats(self, task_ids, useds, failed):
+    @staticmethod
+    def get_stats(task_ids, useds, failed):
+        """stats:
+        {
+            "dataset_id": {
+                "epoch": {data_id, data_id, ...}
+            }
+        }
+        """
         # task -> epoch -> set(indices)
+
         stats = dict()
         for task, used in itertools.chain(zip(task_ids, useds), failed):
             if task not in stats:
@@ -183,15 +192,18 @@ class PadLoader(PadLoaderBase):
             if self.image_grid_thw:
                 batch["image_grid_thw"] = torch.cat(self.image_grid_thw, dim=0)
 
-        self.failed = []
         self.useds = []
-        self.task_ids = []
+        self.failed = []
+
         self.input_ids = []
         self.labels = []
+
         self.pixel_values = []
         self.image_grid_thw = []
+
         self.lengths = []
         self.n_targets = []
+        self.task_ids = []
 
         return batch
 
@@ -203,12 +215,13 @@ class PreferencePadLoader(PadLoaderBase):
             return
 
         self.useds.append(sample["used"])
-        self.task_ids.append(sample["task"])
 
         self.input_ids.append(sample["inputs"])
         self.labels.append(sample["labels"])
+
         self.lengths.append(sample["length"])
         self.n_targets.append(sample["n_target"])
+        self.task_ids.append(sample["task"])
 
     def pop(self):
         batch = {
@@ -264,13 +277,16 @@ class PreferencePadLoader(PadLoaderBase):
                     [torch.full((l,), t, dtype=torch.long) for t, l in zip(self.task_ids, seqlens)], 0
                 ).unsqueeze(0)
 
-        self.failed = []
         self.useds = []
+        self.failed = []
+
         self.input_ids = []
         self.labels = []
+
         self.lengths = []
         self.n_targets = []
         self.task_ids = []
+
         return batch
 
 

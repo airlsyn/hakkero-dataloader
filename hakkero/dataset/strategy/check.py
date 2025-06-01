@@ -15,7 +15,7 @@ def check_legacy(data):
     if all(s not in data for s in LEGACY_KEYS):
         return False, f"No valid keys in data, expect of: ({LEGACY_KEYS})"
 
-    if sum([len(data[key]) for key in LEGACY_KEYS]) == 0:
+    if sum([len(data[key]) for key in LEGACY_KEYS if key in data]) == 0:
         return False, "all valid keys in data are empty"
 
     return True, ""
@@ -39,6 +39,16 @@ def check_message(data):
 
     if data[0]["role"] == "system" and len(data[1:]) % 2 != 0:
         return False, f"messages should be in pairs between user and assistant, but got {data}"
+
+    indices_user = [i for i, d in enumerate(data) if d["role"] == "user"]
+    exp_indices_assistant = [i+1 for i in indices_user]
+    indices_assistant = [i for i, d in enumerate(data) if d["role"] == "assistant"]
+
+    if len(indices_user) != len(indices_assistant) or indices_user[-1] > indices_assistant[-1] or exp_indices_assistant != indices_assistant:
+        return False, ""
+
+    if len([d["role"] for d in data if d["role"] == "user"]) != len([d["role"] for d in data if d["role"] == "assistant"]):
+        return False,
 
     if any([len(d["content"]) == 0 for d in data]):
         return False, f"messages should not be empty, but some of them are empty. see {data}"
