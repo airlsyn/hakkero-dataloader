@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 
+from hakkero.dataset.dataloader import PackPadLoader
 from hakkero.dataset.dataloader import PadLoader
 from hakkero.dataset.dataloader import PreferencePadLoader
 from hakkero.dataset.dataloader import PreferenceUnpadLoader
@@ -9,9 +10,6 @@ from hakkero.dataset.dataloader import UnpadLoader
 from hakkero.dataset.image import process_messages
 from hakkero.dataset.mixed_dataset import get_dataset
 from hakkero.dataset.utils import IGNORE_INDEX
-
-_unpad_loader = {False: UnpadLoader, True: PreferenceUnpadLoader}
-_pad_loader = {False: PadLoader, True: PreferencePadLoader}
 
 
 def get_data(
@@ -65,7 +63,10 @@ def get_data(
     is_preference = is_preference or (st_tokenize is not None and "preference" in st_tokenize)
 
     if use_unpad_data:
-        loader = _unpad_loader[is_preference](dataset, max_total_length=batch_size * max_length)
+        if not is_preference:
+            loader = UnpadLoader(dataset, max_total_length=batch_size * max_length)
+        else:
+            loader = PreferenceUnpadLoader(dataset, max_total_length=batch_size * max_length)
     else:
         if pad_with_ignore_index:
             padding_id = IGNORE_INDEX
@@ -74,9 +75,24 @@ def get_data(
         else:
             padding_id = tokenizer.pad_token_id
 
-        loader = _pad_loader[is_preference](
-            dataset, batch_size=batch_size, padding_id=padding_id, unpad=use_unpad_in_pad
-        )
+        if kwargs.pop("packed", False):
+            loader = PackPadLoader(
+                dataset,
+                batch_size=batch_size,
+                padding_id=padding_id,
+                unpad=use_unpad_in_pad,
+                bos_id=tokenizer.bos_id,
+                eos_id=tokenizer.eos_id,
+            )
+        else:
+            if not is_preference:
+                loader = PadLoader[is_preference](
+                    dataset, batch_size=batch_size, padding_id=padding_id, unpad=use_unpad_in_pad
+                )
+            else:
+                loader = PreferencePadLoader[is_preference](
+                    dataset, batch_size=batch_size, padding_id=padding_id, unpad=use_unpad_in_pad
+                )
 
     if use_unpad_data or use_unpad_in_pad:
         if use_cu_seqlens:

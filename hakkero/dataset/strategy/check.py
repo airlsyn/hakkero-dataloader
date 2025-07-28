@@ -41,14 +41,20 @@ def check_message(data):
         return False, f"messages should be in pairs between user and assistant, but got {data}"
 
     indices_user = [i for i, d in enumerate(data) if d["role"] == "user"]
-    exp_indices_assistant = [i+1 for i in indices_user]
+    exp_indices_assistant = [i + 1 for i in indices_user]
     indices_assistant = [i for i, d in enumerate(data) if d["role"] == "assistant"]
 
-    if len(indices_user) != len(indices_assistant) or indices_user[-1] > indices_assistant[-1] or exp_indices_assistant != indices_assistant:
-        return False, ""
+    if (
+        len(indices_user) != len(indices_assistant)
+        or indices_user[-1] > indices_assistant[-1]
+        or exp_indices_assistant != indices_assistant
+    ):
+        return False, "wrong format, should be user-assistant-user-assistant"
 
-    if len([d["role"] for d in data if d["role"] == "user"]) != len([d["role"] for d in data if d["role"] == "assistant"]):
-        return False,
+    if len([d["role"] for d in data if d["role"] == "user"]) != len(
+        [d["role"] for d in data if d["role"] == "assistant"]
+    ):
+        return False, "user - assistant do not match"
 
     if any([len(d["content"]) == 0 for d in data]):
         return False, f"messages should not be empty, but some of them are empty. see {data}"

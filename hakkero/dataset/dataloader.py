@@ -11,6 +11,7 @@ import torch
 import torch.utils.data
 from torch.nn.utils.rnn import pad_sequence
 
+from hakkero.dataset.misc import unpack_packed_tokens
 from hakkero.dataset.utils import IGNORE_INDEX
 
 
@@ -97,8 +98,11 @@ class Loader(torch.utils.data.IterableDataset):
 
 
 class PadLoaderBase(Loader):
-    def __init__(self, dataset, batch_size, padding_id, unpad=False):
+    def __init__(self, dataset, batch_size, padding_id, bos_id=None, eos_id=None, unpad=False):
         assert padding_id is not None, "padding_id should not be None"
+
+        self.bos_id = bos_id
+        self.eos_id = eos_id
 
         self.dataset = dataset
         self.padding_id = padding_id
@@ -191,6 +195,51 @@ class PadLoader(PadLoaderBase):
                 batch["pixel_values"] = torch.cat(self.pixel_values, dim=0)
             if self.image_grid_thw:
                 batch["image_grid_thw"] = torch.cat(self.image_grid_thw, dim=0)
+
+        self.useds = []
+        self.failed = []
+
+        self.input_ids = []
+        self.labels = []
+
+        self.pixel_values = []
+        self.image_grid_thw = []
+
+        self.lengths = []
+        self.n_targets = []
+        self.task_ids = []
+
+        return batch
+
+
+class PackPadLoader(PadLoader):
+    def pop(self):
+        batch = {"stats": self.get_stats(self.task_ids, self.useds, self.failed)}
+
+        if not self.unpad:
+            raise NotImplementedError("not support")
+        else:
+            re_input_ids = []
+            re_labels = []
+            re_lengths = []
+            for cur_input_ids in self.input_ids:
+                unpacked = unpack_packed_tokens(cur_input_ids.tolist(), self.bos_id, self.eos_id)
+                re_input_ids.extend([torch.tensor(s[:-1], dtype=torch.long) for s in unpacked])
+
+                re_labels.extend([torch.tensor(s[1:], dtype=torch.long) for s in unpacked])
+
+                cur_lengths = [len(s[1:]) for s in unpacked]
+                re_lengths.extend(cur_lengths)
+
+            batch["input_ids"] = torch.cat(re_input_ids, dim=0).unsqueeze(0)
+            batch["labels"] = torch.cat(re_labels, dim=0).unsqueeze(0)
+            batch["cu_seqlens"] = torch.tensor([0] + re_lengths).cumsum(dim=-1).int()
+            batch["position_ids"] = torch.cat(
+                [torch.arange(length, dtype=torch.long) for length in re_lengths], dim=0
+            ).unsqueeze(0)
+
+            batch["n_tokens"] = torch.tensor(sum(re_lengths), dtype=torch.long)
+            batch["n_samples"] = torch.tensor(len(re_lengths), dtype=torch.long)
 
         self.useds = []
         self.failed = []

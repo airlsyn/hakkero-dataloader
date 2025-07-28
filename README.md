@@ -66,6 +66,8 @@ dataset, dataloader, forward_keys = get_data(
     is_preference=False,
     use_unpad_data=False,
     use_unpad_in_pad=False,
+    packed=False,  # 样本是否已经 packed  过了
+    shift=True  # tokenize 返回是否 shift 1 了（input[:-1], label[1:])
 )
 
 prefetcher = dataloader.prefetch(n_workers, drop_last=False)

@@ -48,19 +48,22 @@ def legacy(data, tokenizer, **kwargs):
             "No valid keys in input, expect of: ('title', 'summary', 'abstract', 'text', 'question', 'answer', 'code')"
         )
 
-    if kwargs.get("add_bos_token", False):
+    if kwargs.get("add_bos_token", False) and tokenizer.bos_token_id is not None:
         if input[0] != tokenizer.bos_token_id:
             input = [tokenizer.bos_token_id] + input
         if label[0] != tokenizer.bos_token_id:
             label = [tokenizer.bos_token_id] + label
 
-    if kwargs.get("add_eos_token", False):
+    if kwargs.get("add_eos_token", False) and tokenizer.eos_token_id is not None:
         if input[-1] != tokenizer.eos_token_id:
             input = input + [tokenizer.eos_token_id]
         if label[-1] != tokenizer.eos_token_id:
             label = label + [tokenizer.eos_token_id]
 
-    return dict(input=torch.tensor(input[:-1], dtype=torch.long), label=torch.tensor(label[1:], dtype=torch.long))
+    if kwargs.get("shift", True):
+        return dict(input=torch.tensor(input[:-1], dtype=torch.long), label=torch.tensor(label[1:], dtype=torch.long))
+
+    return dict(input=torch.tensor(input, dtype=torch.long), label=torch.tensor(label, dtype=torch.long))
 
 
 def remove_ignore(content, ignore):
@@ -146,7 +149,10 @@ def huggingface_message(messages, tokenizer, **kwargs):
 
     tokenizer.chat_template = old_chat_template
 
-    return dict(input=torch.tensor(input[:-1], dtype=torch.long), label=torch.tensor(label[1:], dtype=torch.long))
+    if kwargs.get("shift", True):
+        return dict(input=torch.tensor(input[:-1], dtype=torch.long), label=torch.tensor(label[1:], dtype=torch.long))
+
+    return dict(input=torch.tensor(input, dtype=torch.long), label=torch.tensor(label, dtype=torch.long))
 
 
 # data = {
@@ -199,9 +205,15 @@ def huggingface_preference(data, tokenizer, **kwargs):
 
     tokenizer.chat_template = old_chat_template
 
+    if kwargs.get("shift", True):
+        return {
+            "inputs": {key: torch.tensor(value[:-1]) for key, value in inputs.items()},
+            "labels": {key: torch.tensor(value[1:]) for key, value in labels.items()},
+        }
+
     return {
-        "inputs": {key: torch.tensor(value[:-1]) for key, value in inputs.items()},
-        "labels": {key: torch.tensor(value[1:]) for key, value in labels.items()},
+        "inputs": {key: torch.tensor(value) for key, value in inputs.items()},
+        "labels": {key: torch.tensor(value) for key, value in labels.items()},
     }
 
 
@@ -217,7 +229,7 @@ chatml_role = {
 
 
 # messages = [{"role": "user", "content": xxx}, {"role": "assistant", "content": xxx}, ...]
-def role_message(messages, tokenizer, template, context=None):
+def role_message(messages, tokenizer, template, context=None, **kwargs):
     assistant_start_ids = tokenizer.encode(
         template["assistant_start"], add_special_tokens=False, max_length=int(1e12), truncation=True
     )
@@ -251,11 +263,14 @@ def role_message(messages, tokenizer, template, context=None):
         else:
             raise ValueError(f"not supported role: {message['role']}")
 
-    return dict(input=torch.tensor(input[:-1]), label=torch.tensor(label[1:]))
+    if kwargs.get("shift", True):
+        return dict(input=torch.tensor(input[:-1]), label=torch.tensor(label[1:]))
+
+    return dict(input=torch.tensor(input), label=torch.tensor(label))
 
 
 def chatml_message(messages, tokenizer, **kwargs):
-    return role_message(messages, tokenizer, chatml_role)
+    return role_message(messages, tokenizer, chatml_role, **kwargs)
 
 
 # data = {
@@ -263,7 +278,7 @@ def chatml_message(messages, tokenizer, **kwargs):
 #   "chosen": "xx",
 #   "rejected": "xx"
 # }
-def role_preference(data, tokenizer, template):
+def role_preference(data, tokenizer, template, **kwargs):
     assistant_start_ids = tokenizer.encode(
         template["assistant_start"], add_special_tokens=False, max_length=int(1e12), truncation=True
     )
@@ -290,14 +305,20 @@ def role_preference(data, tokenizer, template):
         inputs[key].extend(response_ids)
         labels[key].extend(response_ids)
 
+    if kwargs.get("shift", True):
+        return {
+            "inputs": {key: torch.tensor(value[:-1]) for key, value in inputs.items()},
+            "labels": {key: torch.tensor(value[1:]) for key, value in labels.items()},
+        }
+
     return {
-        "inputs": {key: torch.tensor(value[:-1]) for key, value in inputs.items()},
-        "labels": {key: torch.tensor(value[1:]) for key, value in labels.items()},
+        "inputs": {key: torch.tensor(value) for key, value in inputs.items()},
+        "labels": {key: torch.tensor(value) for key, value in labels.items()},
     }
 
 
 def chatml_preference(data, tokenizer, **kwargs):
-    return role_preference(data, tokenizer, chatml_role)
+    return role_preference(data, tokenizer, chatml_role, **kwargs)
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -312,7 +333,7 @@ def chatml_qwen2_vl_message(messages, tokenizer, processor, path, **kwargs):
     if len(images) > 0:
         messages, mm_inputs = process_messages(messages, images, processor)
 
-    msg = role_message(messages, tokenizer, chatml_role, context=chatml_role["system"].format(qwen2_system))
+    msg = role_message(messages, tokenizer, chatml_role, context=chatml_role["system"].format(qwen2_system), **kwargs)
     if mm_inputs is not None:
         msg.update(mm_inputs)
 
